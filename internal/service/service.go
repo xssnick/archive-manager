@@ -219,7 +219,7 @@ func (s *Service) StartStates() {
 			prevSeqno = nil
 		}
 
-		ctx, cancel := context.WithTimeout(s.closerCtx, 9*time.Hour)
+		ctx, cancel := context.WithTimeout(s.closerCtx, 7*24*time.Hour)
 		path, err := s.gen.Generate(ctx, keyBlockSeqno, prevSeqno)
 		cancel()
 
