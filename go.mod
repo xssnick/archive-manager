@@ -4,7 +4,7 @@ go 1.24
 
 require (
 	github.com/rs/zerolog v1.34.0
-	github.com/xssnick/tonutils-go v1.12.0
+	github.com/xssnick/tonutils-go v1.13.0
 )
 
 require (
@@ -15,5 +15,3 @@ require (
 	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 )
-
-replace github.com/xssnick/tonutils-go v1.12.0 => ../tonutils-go
