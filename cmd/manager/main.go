@@ -49,6 +49,7 @@ func main() {
 
 	configFileName := flag.String("config", "config.json", "path to configuration file")
 	verbosity := flag.String("verbosity", "info", "set the logging verbosity level (debug, info, warn, error, fatal)")
+	splitBlocks := flag.String("split-blocks", "", "split block packs to master and shards, path to put splited")
 
 	flag.Parse()
 
@@ -95,6 +96,20 @@ func main() {
 		Password: cfg.StoragePassword,
 	}, log.With().Str("source", "storage").Logger())
 
+	idx, err := index.Load(cfg.IndexPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to load index")
+	}
+
+	if *splitBlocks != "" {
+		svc := service.NewService(cli, nil, idx, nil, stg, cfg.ServiceName, cfg.ServiceCache, cfg.SerializeStateEveryBlocksNum, cfg.InitialStates)
+		if err = svc.SplitBlockPacks(*splitBlocks); err != nil {
+			log.Fatal().Err(err).Msg("failed to split block packs")
+		}
+		log.Info().Msg("split block packs completed")
+		return
+	}
+
 	client := liteclient.NewConnectionPool()
 
 	log.Info().Msg("connecting to liteserver")
@@ -113,11 +128,6 @@ func main() {
 	if cfg.WatchBlocks {
 		w = fs.NewWatcher(cfg.WatcherRoot, log.With().Str("source", "watcher").Logger())
 		go w.Watch()
-	}
-
-	idx, err := index.Load(cfg.IndexPath)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to load index")
 	}
 
 	var gen *state.Generator

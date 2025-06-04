@@ -4,6 +4,7 @@ import (
 	"archive-manager/pkg/control"
 	"archive-manager/pkg/fs"
 	"archive-manager/pkg/index"
+	"archive-manager/pkg/packsplit"
 	"archive-manager/pkg/state"
 	"archive-manager/pkg/storage"
 	"context"
@@ -11,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/rs/zerolog/log"
+	"io"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -332,4 +335,160 @@ func (s *Service) latestKeyBlockForNextState() (uint32, bool, error) {
 	}
 
 	return blk, false, nil
+}
+
+func (s *Service) SplitBlockPacks(dirToPut string) error {
+	for i, block := range s.idx.Blocks {
+		log.Info().Uint32("from", block.FromPack).Uint32("to", block.ToPack).Msg("checking pack content")
+		bag, _ := hex.DecodeString(block.Bag)
+		details, err := s.storage.GetBag(context.Background(), bag)
+		if err != nil {
+			return fmt.Errorf("get bag %s: %w", block.Bag, err)
+		}
+
+		bagPath := filepath.Clean(filepath.Join(details.Path, details.DirName))
+		log.Info().Hex("bag", bag).Str("path", bagPath).Msg("checking bag")
+
+		if bagPath == filepath.Clean(dirToPut) {
+			log.Info().Hex("bag", bag).Msg("already processed bag, skipping")
+			continue
+		}
+
+		var hasChanges bool
+		var filesForBag []string
+		var writers []func() error
+		for _, file := range details.Files {
+			spl := strings.Split(file.Name, ".")
+			if len(spl) < 3 {
+				return fmt.Errorf("invalid file name: %s", file.Name)
+			}
+
+			path := filepath.Join(details.Path, details.DirName, file.Name)
+
+			if len(spl) > 3 {
+				// already split
+				nm := filepath.Join(dirToPut, file.Name)
+
+				writers = append(writers, func() error {
+					if err = os.MkdirAll(filepath.Dir(nm), 0755); err != nil {
+						return fmt.Errorf("create dir %s: %w", filepath.Dir(nm), err)
+					}
+
+					log.Info().Str("to", nm).Str("from", path).Msg("copying package")
+
+					fl, err := os.Open(path)
+					if err != nil {
+						return fmt.Errorf("open file %s: %w", path, err)
+					}
+					defer fl.Close()
+
+					if _, err = fl.Seek(0, io.SeekStart); err != nil {
+						return fmt.Errorf("seek file %s: %w", path, err)
+					}
+
+					dest, err := os.Create(nm)
+					if err != nil {
+						return fmt.Errorf("create destination file %s: %w", nm, err)
+					}
+					defer dest.Close()
+
+					if _, err = io.Copy(dest, fl); err != nil {
+						return fmt.Errorf("copy file to %s: %w", nm, err)
+					}
+					return nil
+				})
+
+				filesForBag = append(filesForBag, nm)
+				continue
+			}
+
+			// log.Info().Str("file", path).Msg("checking pack")
+
+			fl, err := os.Open(path)
+			if err != nil {
+				return fmt.Errorf("open file %s: %w", path, err)
+			}
+
+			id, err := strconv.ParseUint(spl[1], 10, 32)
+			if err != nil {
+				fl.Close()
+				return fmt.Errorf("invalid file id %s: %w", spl[1], err)
+			}
+
+			pack, err := packsplit.ReadPackage(fl)
+			fl.Close()
+			if err != nil {
+				return fmt.Errorf("read file %s: %w", path, err)
+			}
+
+			fls, err := packsplit.SplitByFiles(int(id), pack)
+			if err != nil {
+				return fmt.Errorf("split file %s: %w", path, err)
+			}
+
+			if len(fls) > 1 {
+				hasChanges = true
+			}
+
+			for nm, f := range fls {
+				nm = filepath.Join(dirToPut, filepath.Dir(file.Name), nm)
+				filesForBag = append(filesForBag, nm)
+
+				entries := f
+				writers = append(writers, func() error {
+					if err = os.MkdirAll(filepath.Dir(nm), 0755); err != nil {
+						return fmt.Errorf("create dir %s: %w", filepath.Dir(nm), err)
+					}
+
+					log.Info().Str("file", nm).Msg("writing package")
+
+					nf, err := os.Create(nm)
+					if err != nil {
+						return fmt.Errorf("create file %s: %w", nm, err)
+					}
+					defer nf.Close()
+
+					if err = packsplit.WritePackage(nf, entries); err != nil {
+						return fmt.Errorf("write new file %s: %w", nm, err)
+					}
+					return nil
+				})
+			}
+		}
+
+		if !hasChanges {
+			log.Info().Hex("bag", bag).Msg("no changes, skipping")
+			continue
+		}
+
+		log.Info().Hex("bag", bag).Msg("changes found, replacing")
+
+		for x, writer := range writers {
+			if err = writer(); err != nil {
+				return fmt.Errorf("failed writer %s: %w", filesForBag[x], err)
+			}
+		}
+		sort.Strings(filesForBag)
+
+		dir := filepath.Dir(filepath.Dir(filesForBag[0]))
+		log.Info().Str("root", dir).Int("files", len(filesForBag)).Str("first_path", filesForBag[0]).Msg("new bag info")
+
+		newId, err := s.storage.CreateBag(context.Background(), dir, details.Bag.Description, filesForBag)
+		if err != nil {
+			return fmt.Errorf("create bag %s: %w", details.Bag.Description, err)
+		}
+		s.idx.Blocks[i].Bag = hex.EncodeToString(newId)
+
+		if err = s.idx.Save(); err != nil {
+			return fmt.Errorf("save idx %s: %w", details.Bag.Description, err)
+		}
+		log.Info().Hex("from", bag).Hex("to", newId).Int("files_before", len(details.Files)).Int("files_after", len(filesForBag)).Msg("index bag replaced")
+
+		if err = s.storage.RemoveBag(context.Background(), bag, false); err != nil {
+			return fmt.Errorf("remove bag %s: %w", hex.EncodeToString(bag), err)
+		}
+		log.Info().Hex("bag", bag).Msg("old bag removed")
+	}
+
+	return nil
 }
