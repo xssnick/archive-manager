@@ -7,6 +7,7 @@ import (
 	"archive-manager/pkg/packsplit"
 	"archive-manager/pkg/state"
 	"archive-manager/pkg/storage"
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -136,7 +138,11 @@ func (s *Service) StartBlocks() {
 						filesForBag = append(filesForBag, info.Files()...)
 					}
 
-					sort.Strings(filesForBag)
+					filesForBag, err = sortFiles(filesForBag)
+					if err != nil {
+						log.Error().Err(err).Msg("failed to sort files")
+						break
+					}
 
 					log.Info().
 						Int("files", len(filesForBag)).
@@ -222,7 +228,7 @@ func (s *Service) StartStates() {
 			prevSeqno = nil
 		}
 
-		ctx, cancel := context.WithTimeout(s.closerCtx, 7*24*time.Hour)
+		ctx, cancel := context.WithTimeout(s.closerCtx, 14*24*time.Hour)
 		path, err := s.gen.Generate(ctx, keyBlockSeqno, prevSeqno)
 		cancel()
 
@@ -477,12 +483,69 @@ func (s *Service) SplitBlockPacks(dirToPut string) error {
 		if err != nil {
 			return fmt.Errorf("create bag %s: %w", details.Bag.Description, err)
 		}
+
+		if bytes.Equal(bag, newId) {
+			log.Info().Hex("bag", bag).Msg("bag not changed, skipping")
+			continue
+		}
+
 		s.idx.Blocks[i].Bag = hex.EncodeToString(newId)
 
 		if err = s.idx.Save(); err != nil {
 			return fmt.Errorf("save idx %s: %w", details.Bag.Description, err)
 		}
 		log.Info().Hex("from", bag).Hex("to", newId).Int("files_before", len(details.Files)).Int("files_after", len(filesForBag)).Msg("index bag replaced")
+
+		if err = s.storage.RemoveBag(context.Background(), bag, false); err != nil {
+			return fmt.Errorf("remove bag %s: %w", hex.EncodeToString(bag), err)
+		}
+		log.Info().Hex("bag", bag).Msg("old bag removed")
+	}
+
+	return nil
+}
+
+func (s *Service) RepackBlockBags() error {
+	for i, block := range s.idx.Blocks {
+		log.Info().Uint32("from", block.FromPack).Uint32("to", block.ToPack).Msg("checking bag content")
+		bag, _ := hex.DecodeString(block.Bag)
+		details, err := s.storage.GetBag(context.Background(), bag)
+		if err != nil {
+			return fmt.Errorf("get bag %s: %w", block.Bag, err)
+		}
+
+		var filesRaw []string
+		for _, file := range details.Files {
+			filesRaw = append(filesRaw, filepath.Join(details.Path, details.DirName, file.Name))
+		}
+
+		files, err := sortFiles(filesRaw)
+		if err != nil {
+			return fmt.Errorf("sort files: %w", err)
+		}
+
+		// Compare the files list after sorting to ensure no changes
+		if slices.Equal(filesRaw, files) {
+			log.Info().Hex("bag", bag).Msg("files are equal after sorting, skipping")
+			continue
+		}
+
+		newId, err := s.storage.CreateBag(context.Background(), filepath.Join(details.Path, details.DirName), details.Bag.Description, files)
+		if err != nil {
+			return fmt.Errorf("create bag %s: %w", details.Bag.Description, err)
+		}
+
+		if bytes.Equal(bag, newId) {
+			log.Info().Hex("bag", bag).Msg("bag not changed, skipping")
+			continue
+		}
+
+		s.idx.Blocks[i].Bag = hex.EncodeToString(newId)
+
+		if err = s.idx.Save(); err != nil {
+			return fmt.Errorf("save idx %s: %w", details.Bag.Description, err)
+		}
+		log.Info().Hex("from", bag).Hex("to", newId).Int("files_before", len(details.Files)).Int("files_after", len(files)).Msg("index bag replaced")
 
 		if err = s.storage.RemoveBag(context.Background(), bag, false); err != nil {
 			return fmt.Errorf("remove bag %s: %w", hex.EncodeToString(bag), err)

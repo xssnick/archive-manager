@@ -44,6 +44,29 @@ func (c *Client) GetBag(ctx context.Context, bagId []byte) (*BagDetailed, error)
 	return &res, nil
 }
 
+func (c *Client) StartDownload(ctx context.Context, bagId []byte, downloadAll bool) error {
+	type request struct {
+		BagID       string   `json:"bag_id"`
+		Path        string   `json:"path"`
+		DownloadAll bool     `json:"download_all"`
+		Files       []uint32 `json:"files"`
+	}
+
+	var res Result
+	if err := c.doRequest(ctx, "POST", "/api/v1/add", request{
+		BagID:       hex.EncodeToString(bagId),
+		Path:        "./downloads",
+		DownloadAll: downloadAll,
+	}, &res); err != nil {
+		return fmt.Errorf("failed to do request: %w", err)
+	}
+
+	if !res.Ok {
+		return fmt.Errorf("error in response: %s", res.Error)
+	}
+	return nil
+}
+
 func (c *Client) GetPieceProof(ctx context.Context, bagId []byte, piece uint64) ([]byte, error) {
 	var res ProofResponse
 	if err := c.doRequest(ctx, "GET", "/api/v1/piece/proof?bag_id="+hex.EncodeToString(bagId)+"&piece="+fmt.Sprint(piece), nil, &res); err != nil {

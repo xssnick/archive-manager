@@ -50,6 +50,7 @@ func main() {
 	configFileName := flag.String("config", "config.json", "path to configuration file")
 	verbosity := flag.String("verbosity", "info", "set the logging verbosity level (debug, info, warn, error, fatal)")
 	splitBlocks := flag.String("split-blocks", "", "split block packs to master and shards, path to put splited")
+	repackBlockBags := flag.Bool("repack-block-bags", false, "repack block bags to optimize download size")
 
 	flag.Parse()
 
@@ -99,6 +100,15 @@ func main() {
 	idx, err := index.Load(cfg.IndexPath)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load index")
+	}
+
+	if *repackBlockBags {
+		svc := service.NewService(cli, nil, idx, nil, stg, cfg.ServiceName, cfg.ServiceCache, cfg.SerializeStateEveryBlocksNum, cfg.InitialStates)
+		if err = svc.RepackBlockBags(); err != nil {
+			log.Fatal().Err(err).Msg("failed to repack block bags")
+		}
+		log.Info().Msg("repack block bags completed")
+		return
 	}
 
 	if *splitBlocks != "" {
