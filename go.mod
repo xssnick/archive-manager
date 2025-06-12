@@ -1,4 +1,4 @@
-module archive-manager
+module github.com/xssnick/archive-manager
 
 go 1.24
 

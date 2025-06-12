@@ -1,13 +1,13 @@
 package main
 
 import (
-	"archive-manager/pkg/index"
-	"archive-manager/pkg/storage"
 	"context"
 	"encoding/hex"
 	"flag"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/xssnick/archive-manager/pkg/index"
+	"github.com/xssnick/archive-manager/pkg/storage"
 	"os"
 	"time"
 )

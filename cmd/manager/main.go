@@ -1,12 +1,6 @@
 package main
 
 import (
-	"archive-manager/internal/service"
-	"archive-manager/pkg/control"
-	"archive-manager/pkg/fs"
-	"archive-manager/pkg/index"
-	"archive-manager/pkg/state"
-	"archive-manager/pkg/storage"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -14,6 +8,12 @@ import (
 	"flag"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/xssnick/archive-manager/internal/service"
+	"github.com/xssnick/archive-manager/pkg/control"
+	"github.com/xssnick/archive-manager/pkg/fs"
+	"github.com/xssnick/archive-manager/pkg/index"
+	"github.com/xssnick/archive-manager/pkg/state"
+	"github.com/xssnick/archive-manager/pkg/storage"
 	"github.com/xssnick/tonutils-go/liteclient"
 	"github.com/xssnick/tonutils-go/ton"
 	"os"
