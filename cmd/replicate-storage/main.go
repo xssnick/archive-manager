@@ -26,7 +26,7 @@ func main() {
 		Password: *storagePassword,
 	}, log.With().Str("source", "storage").Logger())
 
-	idx, err := index.Load(*indexPath)
+	idx, err := index.Load(*indexPath, nil, nil)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load index")
 	}

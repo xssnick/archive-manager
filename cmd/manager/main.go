@@ -40,6 +40,8 @@ type Config struct {
 	WatchStates                  bool     `json:"watch_states"`
 	SerializeStateEveryBlocksNum uint32   `json:"serialize_state_every_blocks_num"`
 	InitialStates                []uint32 `json:"initial_states"`
+	TonDomainForIndex            string   `json:"ton_domain_for_index"`
+	WalletKey                    []byte   `json:"wallet_key"`
 }
 
 func main() {
@@ -97,7 +99,29 @@ func main() {
 		Password: cfg.StoragePassword,
 	}, log.With().Str("source", "storage").Logger())
 
-	idx, err := index.Load(cfg.IndexPath)
+	client := liteclient.NewConnectionPool()
+
+	log.Info().Msg("connecting to liteserver")
+
+	err = client.AddConnection(context.Background(), cfg.LiteServerAddr, cfg.LiteServerKey)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to connect to liteserver")
+	}
+	api := ton.NewAPIClient(client, ton.ProofCheckPolicyFast).WithRetry()
+
+	if _, err = api.GetMasterchainInfo(context.Background()); err != nil {
+		log.Fatal().Err(err).Msg("failed to get masterchain info")
+	}
+
+	var updater *index.Updater
+	if cfg.TonDomainForIndex != "" && cfg.WalletKey != nil {
+		updater, err = index.InitUpdater(context.Background(), api, cfg.TonDomainForIndex, cfg.WalletKey, log.With().Str("source", "updater").Logger())
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to init updater")
+		}
+	}
+
+	idx, err := index.Load(cfg.IndexPath, updater, stg)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load index")
 	}
@@ -118,20 +142,6 @@ func main() {
 		}
 		log.Info().Msg("split block packs completed")
 		return
-	}
-
-	client := liteclient.NewConnectionPool()
-
-	log.Info().Msg("connecting to liteserver")
-
-	err = client.AddConnection(context.Background(), cfg.LiteServerAddr, cfg.LiteServerKey)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to connect to liteserver")
-	}
-	api := ton.NewAPIClient(client, ton.ProofCheckPolicyFast).WithRetry()
-
-	if _, err = api.GetMasterchainInfo(context.Background()); err != nil {
-		log.Fatal().Err(err).Msg("failed to get masterchain info")
 	}
 
 	var w *fs.Watcher

@@ -9,6 +9,8 @@ import (
 	"github.com/xssnick/tonutils-go/ton"
 	"github.com/xssnick/tonutils-go/ton/dns"
 	"github.com/xssnick/tonutils-go/ton/wallet"
+	"sync/atomic"
+	"time"
 )
 
 type Updater struct {
@@ -19,10 +21,20 @@ type Updater struct {
 }
 
 func InitUpdater(ctx context.Context, api ton.APIClientWrapped, domain string, key ed25519.PrivateKey, logger zerolog.Logger) (*Updater, error) {
-	w, err := wallet.FromPrivateKey(api, key, wallet.V3R2)
+	walletAbstractSeqno := uint32(0)
+	w, err := wallet.FromPrivateKey(api, key, wallet.ConfigHighloadV3{
+		MessageTTL: 3*60 + 30,
+		MessageBuilder: func(ctx context.Context, subWalletId uint32) (id uint32, createdAt int64, err error) {
+			createdAt = time.Now().UTC().Unix() - 30 // something older than last master block, to pass through LS external's time validation
+			id = uint32((createdAt%(3*60+30))<<15) | atomic.AddUint32(&walletAbstractSeqno, 1)%(1<<15)
+			return
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to init wallet: %w", err)
 	}
+
+	logger.Info().Str("addr", w.WalletAddress().String()).Msg("wallet initialized for updater, make sure balance is enough and nft domain is owned")
 
 	root, err := dns.GetRootContractAddr(ctx, api)
 	if err != nil {
