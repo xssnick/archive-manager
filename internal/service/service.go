@@ -168,7 +168,7 @@ func (s *Service) StartBlocks() {
 						ToPack:   *toPack,
 						Bag:      hex.EncodeToString(bagId),
 					})
-					if err = s.idx.Save(); err != nil {
+					if err = s.idx.Save(ctx); err != nil {
 						log.Error().Err(err).Msg("failed to save index")
 						delete(packs, pack.Seqno)
 						break
@@ -257,7 +257,7 @@ func (s *Service) StartStates() {
 			AtBlock: keyBlockSeqno,
 			Bag:     hex.EncodeToString(bagId),
 		})
-		if err = s.idx.Save(); err != nil {
+		if err = s.idx.Save(ctx); err != nil {
 			log.Error().Err(err).Uint32("block", keyBlockSeqno).Msg("failed to save index")
 			wait = 5 * time.Second
 			continue
@@ -491,7 +491,7 @@ func (s *Service) SplitBlockPacks(dirToPut string) error {
 
 		s.idx.Blocks[i].Bag = hex.EncodeToString(newId)
 
-		if err = s.idx.Save(); err != nil {
+		if err = s.idx.Save(context.Background()); err != nil {
 			return fmt.Errorf("save idx %s: %w", details.Bag.Description, err)
 		}
 		log.Info().Hex("from", bag).Hex("to", newId).Int("files_before", len(details.Files)).Int("files_after", len(filesForBag)).Msg("index bag replaced")
@@ -542,7 +542,7 @@ func (s *Service) RepackBlockBags() error {
 
 		s.idx.Blocks[i].Bag = hex.EncodeToString(newId)
 
-		if err = s.idx.Save(); err != nil {
+		if err = s.idx.Save(context.Background()); err != nil {
 			return fmt.Errorf("save idx %s: %w", details.Bag.Description, err)
 		}
 		log.Info().Hex("from", bag).Hex("to", newId).Int("files_before", len(details.Files)).Int("files_after", len(files)).Msg("index bag replaced")
