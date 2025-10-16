@@ -31,6 +31,8 @@ type Index struct {
 	updater *Updater
 	storage *storage.Client
 
+	lastBagAt time.Time
+
 	mx sync.RWMutex
 }
 
@@ -61,10 +63,13 @@ func (idx *Index) Save(ctx context.Context) error {
 		return err
 	}
 
-	if idx.updater != nil && idx.storage != nil {
+	if idx.updater != nil && idx.storage != nil && time.Since(idx.lastBagAt) > 90*time.Minute {
 		dir := filepath.Dir(idx.path)
 
 		path := filepath.Join(dir, "index_bags", fmt.Sprintf("%d_%d", time.Now().Unix(), crc32.ChecksumIEEE(data)), "index", "index.json")
+		if err = os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			return err
+		}
 		if err = os.WriteFile(path, data, 0644); err != nil {
 			return err
 		}
@@ -77,6 +82,8 @@ func (idx *Index) Save(ctx context.Context) error {
 		if err = idx.updater.UpdateIndexRecord(ctx, bagId); err != nil {
 			return err
 		}
+
+		idx.lastBagAt = time.Now()
 	}
 
 	return nil
@@ -124,7 +131,7 @@ func (idx *Index) GetLatestBlock() BlockSet {
 	if len(idx.Blocks) == 0 {
 		return BlockSet{}
 	}
-	
+
 	latest := idx.Blocks[0]
 	for _, b := range idx.Blocks[1:] {
 		if b.ToPack > latest.ToPack {
