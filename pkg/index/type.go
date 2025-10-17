@@ -59,10 +59,6 @@ func (idx *Index) Save(ctx context.Context) error {
 		return err
 	}
 
-	if err = os.WriteFile(idx.path, data, 0644); err != nil {
-		return err
-	}
-
 	if idx.updater != nil && idx.storage != nil && time.Since(idx.lastBagAt) > 90*time.Minute {
 		dir := filepath.Dir(idx.path)
 
@@ -84,6 +80,10 @@ func (idx *Index) Save(ctx context.Context) error {
 		}
 
 		idx.lastBagAt = time.Now()
+	}
+
+	if err = os.WriteFile(idx.path, data, 0644); err != nil {
+		return err
 	}
 
 	return nil

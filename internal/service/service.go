@@ -168,7 +168,11 @@ func (s *Service) StartBlocks() {
 						ToPack:   *toPack,
 						Bag:      hex.EncodeToString(bagId),
 					})
-					if err = s.idx.Save(ctx); err != nil {
+
+					ctx, cancel = context.WithTimeout(s.closerCtx, 10*time.Minute)
+					err = s.idx.Save(ctx)
+					cancel()
+					if err != nil {
 						log.Error().Err(err).Msg("failed to save index")
 						delete(packs, pack.Seqno)
 						break
@@ -257,7 +261,11 @@ func (s *Service) StartStates() {
 			AtBlock: keyBlockSeqno,
 			Bag:     hex.EncodeToString(bagId),
 		})
-		if err = s.idx.Save(ctx); err != nil {
+
+		ctx, cancel = context.WithTimeout(s.closerCtx, 10*time.Minute)
+		err = s.idx.Save(ctx)
+		cancel()
+		if err != nil {
 			log.Error().Err(err).Uint32("block", keyBlockSeqno).Msg("failed to save index")
 			wait = 5 * time.Second
 			continue
