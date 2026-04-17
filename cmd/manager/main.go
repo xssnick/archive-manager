@@ -107,7 +107,7 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to connect to liteserver")
 	}
-	api := ton.NewAPIClient(client, ton.ProofCheckPolicyFast).WithRetry()
+	api := ton.NewAPIClient(client, ton.ProofCheckPolicyFast).WithLSInfoInErrors().WithRetry()
 
 	if _, err = api.GetMasterchainInfo(context.Background()); err != nil {
 		log.Fatal().Err(err).Msg("failed to get masterchain info")

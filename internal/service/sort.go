@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-var re = regexp.MustCompile(`archive\.(\d+)(?:\.0\:([0-9A-Za-z]+))?\.pack$`)
+var re = regexp.MustCompile(`archive\.(\d+)(?:\.0[:_]([0-9A-Za-z]+))?\.pack$`)
 
 type fileInfo struct {
 	raw     string
